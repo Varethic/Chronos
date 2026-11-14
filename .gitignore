@@ -1,0 +1,14 @@
+# Large generated artifacts are rebuilt locally:
+#   python src\main.py dataset   -> src/data/traindata.json, testdata.json, manifest.json
+#   python src\main.py train     -> src/models/model.pt, src/json/vocab.json, config.json, metrics.json, history.json
+# GitHub rejects files above 100 MB, and testdata.json (~266 MB) and model.pt (~132 MB) exceed that.
+src/data/traindata.json
+src/data/testdata.json
+src/data/manifest.json
+src/models/model.pt
+
+# Runtime state and caches
+__pycache__/
+*.pyc
+*.tmp
+src/json/history.json
