@@ -1,4 +1,4 @@
-"""Chronos Alpha v2 corpus: 6,000 parameterized training records and 600 unseen holdout records."""
+"""Chronos Alpha corpus: 6,000 parameterized training records and 600 unseen holdout records."""
 import os, ast, json, csv, io, re, random, string, concurrent.futures
 import torch, torch.utils.data
 from config import _paths, _atomicjson, _digest

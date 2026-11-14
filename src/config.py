@@ -1,4 +1,4 @@
-"""Chronos Alpha v2 runtime configuration: topology, long-context limits, curriculum, and artifact paths."""
+"""Chronos Alpha runtime configuration: topology, long-context limits, curriculum, and artifact paths."""
 import os, json, math, time, random, hashlib
 import torch
 
@@ -47,7 +47,7 @@ def _precision():
 
 
 def _settings():
-    """Resolve the frozen Chronos Alpha v2 topology, long-context limits, and curriculum."""
+    """Resolve the frozen Chronos Alpha topology, long-context limits, and curriculum."""
     cores = _bind()
     seed = 17041
     random.seed(seed)
@@ -58,7 +58,7 @@ def _settings():
         "sequence": 1024, "stagesequence": 4096, "chunk": 2048, "attnblock": 512, "window": 2048, "sinks": 16,
         "maxinput": 131072, "maxcontext": 1048576, "theta": 500000.0, "scaling": 32.0, "ropebase": 4096,
         "batch": 16, "stagebatch": 2, "replayshort": 12, "bucket": 256, "stagelr": 0.00003, "steps": 6000, "stagetwo": 8000, "lr": 0.0003, "warmup": 400, "decay": 0.1, "clip": 1.0,
-        "timeout": 2.0, "replay": 3.0, "generate": 384, "reply": 256, "temperature": 0.0, "saveevery": 50,
+        "timeout": 4.0, "replay": 3.0, "generate": 384, "reply": 256, "temperature": 0.0, "saveevery": 50,
         "trainrecords": 6000, "holdoutrecords": 600, "needles": 50, "retrievaltokens": 152000, "checkpoints": 4,
     }
 

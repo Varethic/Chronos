@@ -1,6 +1,6 @@
 # AGENTS.md — Engineering Standards & Operational Protocol (v2)
 
-This document defines the binding rules, architectural blueprints, and execution standards for any AI agent or engineer working on **Chronos Alpha v2** — a specialized conversational Python engineering model supporting **128k input** and **1M context window**.
+This document defines the binding rules, architectural blueprints, and execution standards for any AI agent or engineer working on **Chronos Alpha** — a specialized conversational Python engineering model supporting **128k input** and **1M context window**.
 
 ---
 
@@ -58,7 +58,7 @@ chronos/
 
 ---
 
-## 2. Model Specification: Chronos Alpha v2
+## 2. Model Specification: Chronos Alpha
 
 - **Identity:** `Chronos Alpha`
 - **Strict Domain Specialization & Guardrail:**

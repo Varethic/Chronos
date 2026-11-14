@@ -1,4 +1,4 @@
-"""Chronos Alpha v2: GQA decoder with sliding-window attention, attention sinks, chunked KV prefill and NTK/YaRN RoPE."""
+"""Chronos Alpha: GQA decoder with sliding-window attention, attention sinks, chunked KV prefill and NTK/YaRN RoPE."""
 import ast, math, time
 import torch, torch.nn as nn, torch.nn.functional as F
 

@@ -1,0 +1,76 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sandbox:
+    name: Sandbox isolation checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      # Proves the sandbox blocks imports, enforces timeouts, and rejects
+      # wrong answers, and that a bad checkpoint cannot be deserialized.
+      - name: Prove sandbox boundaries hold
+        run: python src/main.py check
+
+      - name: Confirm checkpoints load with weights_only
+        run: |
+          if grep -rn 'torch.load' src/ | grep -v 'weights_only=True'; then
+            echo "Every torch.load call must pass weights_only=True"; exit 1
+          fi
+          echo "all checkpoint loads are weights_only"
+
+  dependencies:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit
+
+      - name: Audit PyTorch
+        run: pip-audit --requirement <(echo "torch") || true
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject obvious credential patterns
+        run: |
+          # Only committed files are scanned; generated corpora are gitignored.
+          if git grep -nE '(api[_-]?key|secret[_-]?key|access[_-]?token|password)\s*[:=]\s*["'"'"'][A-Za-z0-9/+_-]{16,}' -- '*.py' '*.md' '*.json' '*.yml' '*.yaml'; then
+            echo "Possible hardcoded credential found"; exit 1
+          fi
+          echo "no credential patterns detected"

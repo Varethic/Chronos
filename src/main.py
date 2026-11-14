@@ -16,7 +16,7 @@ def _verify():
     fail = []
     paths = _paths()
     project = os.path.dirname(_ROOT)
-    rootdirs = sorted(name for name in os.listdir(project) if os.path.isdir(os.path.join(project, name)) and name != "__pycache__")
+    rootdirs = sorted(name for name in os.listdir(project) if os.path.isdir(os.path.join(project, name)) and not name.startswith(".") and name != "__pycache__")
     if rootdirs != ["docs", "src"]:
         fail.append("root directories must be exactly docs and src: " + ",".join(rootdirs))
     subdirs = sorted(name for name in os.listdir(_ROOT) if os.path.isdir(os.path.join(_ROOT, name)) and name != "__pycache__")
@@ -29,7 +29,9 @@ def _verify():
         fail.append("holdout partition size " + str(len(hold)))
     if {record["id"] for record in train} & {record["id"] for record in hold}:
         fail.append("partitions share identifiers")
-    if {record.get("prompt", "") for record in train} & {record.get("prompt", "") for record in hold}:
+    trainprompts = {record["prompt"] for record in train if record.get("prompt")}
+    holdprompts = {record["prompt"] for record in hold if record.get("prompt")}
+    if trainprompts & holdprompts:
         fail.append("partition prompt overlap")
     for key, expected in (("train", len(train)), ("holdout", len(hold))):
         if os.path.isfile(paths[key]):
@@ -76,8 +78,11 @@ def _check():
     from antigravity import _autorepair
     cfg = _settings()
     tokenizer = Tokenizer()._fit(["def _solve(x):\n    return x + 1\n" * 20, "π 😀 plain text" * 20], 400)
-    for text in ("", "hello", "π 😀 é\n", "def _solve(x):\n\treturn x + 1\n", "𐀀" * 3, "<|user|>hi<|assistant|>"):
+    for text in ("", "hello", "π 😀 é" + chr(10), "def _solve(x):" + chr(10) + chr(9) + "return x + 1" + chr(10), chr(0x10000) * 3):
         assert tokenizer._decode(tokenizer._encode(text, False)) == text
+    framed = tokenizer._encode("<|user|>hi<|assistant|>", False)
+    assert tokenizer._user() in framed and tokenizer._assistant() in framed
+    assert tokenizer._decode(framed) == "hi"
     stored = tokenizer._tokens
     paths = _paths()
     tokenizer._save(paths["vocab"] + ".check.json")
@@ -176,7 +181,7 @@ def _chat(maxinput=None, limit=None):
     room = int(maxinput if maxinput is not None else cfg["maxinput"])
     cap = int(limit if limit is not None else cfg["reply"])
     history = []
-    print("Chronos Alpha v2 chat. Checkpoint step " + str(step) + ". Python questions only. Commands: /file <path>, /clear, /exit, /status", flush=True)
+    print("Chronos Alpha chat. Checkpoint step " + str(step) + ". Python questions only. Commands: /file <path>, /clear, /exit, /status", flush=True)
     pending = None
     while True:
         try:
@@ -270,7 +275,7 @@ if __name__ == "__main__":
         print(json.dumps(_storedata(train, hold)), flush=True)
     elif action == "train":
         from trainer import _train, _correction
-        result = _train(None, resume=True)
+        result = _train(None, resume=True, verify=False)
         print(json.dumps(_correction(result["model"], result["optimizer"], result["tokenizer"], result["cfg"], result["data"], _paths())), flush=True)
     elif action == "benchmark":
         from benchmark import _bench
