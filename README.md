@@ -170,7 +170,23 @@ Filenames are lowercase alphanumeric with no hyphens or underscores. Every funct
 
 ## Honest status
 
-Chronos Alpha is a research prototype, not a production assistant. Evaluation results, including weaknesses, are published in [`docs/report.md`](docs/report.md) and the compliance ledger in [`docs/audit.md`](docs/audit.md). No metric in either file is estimated or invented; every number comes from running the checkpoint that is checked in.
+**The architecture works. The language model does not yet.**
+
+The long-context engineering is real and verified: a 131,072-token input streams through chunked prefill in linear memory (+0.25 GB measured), the sliding-window cache stays bounded at 2,064 cells, and incremental decoding matches single-pass decoding to 1.2e-06.
+
+The model trained on top of it is under-trained. After 8,000 real optimizer steps, held-in loss across all domains is 4.0-10.9 against a uniform baseline of 8.3, and sampled holdout generation produces incoherent fragments rather than answers:
+
+| Slice | Sampled | Result |
+|---|---:|---|
+| Coding, syntax-valid | 40 | 6 (15%) |
+| Guardrail, exact refusal | 20 | 0 (0%) |
+| Q&A, exact match | 10 | 0 (0%) |
+
+The training log reported losses near 0.0 because stride-100 logging sampled the shortest bucket served by the length-bucketed loader. That number was real but unrepresentative; the per-domain table in [`docs/audit.md`](docs/audit.md) is the honest one.
+
+Likely causes: 11.03M parameters spread over a 4,096-token vocabulary, ~75 supervised tokens per coding record, and a cosine floor of 3e-5 that moved embedding weights by only 1.4e-5 per step at the end.
+
+Full results, including the failure analysis and the defects fixed along the way, are in [`docs/report.md`](docs/report.md) and [`docs/audit.md`](docs/audit.md). No metric in either file is estimated or invented.
 
 See [`SECURITY.md`](SECURITY.md) for the threat model around sandboxed code execution.
 

@@ -1,5 +1,52 @@
 # Chronos Alpha benchmark
 
+## Run 2026-11-14 (checkpoint step 8000) — sampled diagnostic
+
+Checkpoint optimizer step 8000, precision float32, 5 physical cores, 8,000 of 8,000 optimizer steps completed with 0 skipped.
+
+The full 600-record benchmark has not been run against this checkpoint yet. The table below is a **sampled diagnostic** produced by greedy decoding from the chat-framed prompt, so it measures the same pipeline the full benchmark uses, on a subset.
+
+| Holdout slice | Sampled | Result | Rate |
+|---|---:|---|---:|
+| Coding (syntax-valid) | 40 | 6 | 15.00% |
+| Coding (execution-correct) | 40 | not yet measured | - |
+| Guardrail (exact refusal) | 20 | 0 | 0.00% |
+| Q&A (exact match) | 10 | 0 | 0.00% |
+
+### What this shows
+
+The checkpoint does not yet behave as a usable Python assistant. Generation drifts into fragments of training text rather than a coherent answer, so most samples are neither valid Python nor the mandated refusal sentence.
+
+Held-in loss on the training corpus remained high even after all 8,000 steps:
+
+| Domain | Held-in loss | Held-in token accuracy |
+|---|---:|---:|
+| loops | 9.01 | 30.0% |
+| control | 10.83 | 14.8% |
+| http | 8.38 | 38.3% |
+| async | 8.58 | 37.0% |
+| json | 10.91 | 14.2% |
+| text | 8.71 | 41.5% |
+| qa | 6.76 | 10.2% |
+| guardrail | 4.83 | 33.9% |
+| longcontext | 4.01 | 37.9% |
+
+Uniform guessing over a 4,096-token vocabulary yields a loss of about 8.3, so most domains are at or above the random baseline. The training log reported losses near 0.0 because the length-bucketed loader serves the shortest bucket first and stride-100 logging sampled those batches; that number was real but not representative. The per-domain table above is the honest measurement.
+
+### Likely causes
+
+- 11.03M parameters spread over a 4,096-token vocabulary leaves little capacity per token.
+- Coding records carry only ~75 supervised tokens each, so 8,000 steps saw roughly 6M supervised tokens.
+- The cosine schedule decays to 3e-5 by the end, and an embedding update measured at step 8000 moved weights by only 1.4e-5, which is too small to keep learning.
+
+### Next steps
+
+Select a lower cosine floor or extend the schedule so the final phase keeps a usable learning rate, then retrain and rerun this evaluation. Until a checkpoint clears the guardrail and coding slices, this project should be read as a working long-context architecture with an under-trained language model attached.
+
+---
+
+# Chronos Alpha benchmark
+
 ## Run 2026-11-13 17:40:19
 
 Checkpoint optimizer step 5000, precision float32, 5 physical cores.

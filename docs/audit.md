@@ -82,42 +82,73 @@ The implementation did not run end to end when first inspected. The following we
 
 ## 5. Training and numeric stability
 
-The trainer completed **5,000 real optimizer steps** with **0 skipped attempts** and **0 non-finite losses or gradients**. Gradient clipping is applied at norm 1.0; the largest observed pre-clip gradient norm was 9.94. Every accepted update recorded a positive embedding-weight delta (range 5.69e-4 to 1.03e-3), i.e. the optimizer demonstrably moved parameters on every counted step. The step sequence is strictly monotonic with 5,000 distinct values ending at 5,000.
+The trainer completed **8,000 real optimizer steps** across both curriculum stages with **0 skipped attempts** and **0 non-finite losses or gradients**. Every accepted update recorded a positive embedding-weight delta, so the optimizer demonstrably moved parameters on every counted step.
 
 | Metric | Observed |
 |---|---|
-| Real optimizer steps | 5,000 |
+| Real optimizer steps | 8,000 |
+| Stage 1 / Stage 2 | steps 1-6,000 at seq 1,024 / steps 6,001-8,000 at seq 4,096 |
 | Skipped attempts | 0 |
 | Non-finite losses / gradients | 0 / 0 |
-| Loss, first 20-step window | 6.2224 |
-| Loss, final 20-step window | 0.0821 |
-| Wall time | 1,006.8 s |
-| Parameters | 5,263,360 |
+| Parameters | 11,034,368 |
+| Precision | float32 (no autocast) |
 
-Save/load round-trips assert that optimizer state counters agree with the checkpoint step, and `python src\main.py stepcheck` re-verifies that the persisted checkpoint reports step 5000 with a parameter count inside the mandated band.
+### Correction: the training log understated the loss
+
+Stride-100 logging sampled batches in the order the length-bucketed loader served them. Because that loader sorts rows by supervised length, the logged batches were the shortest ones, and their loss did fall to 0.0. That figure was accurate for those batches but **not representative of the corpus**. The per-domain held-in measurement taken after training finished is the honest number:
+
+| Domain | Held-in loss | Held-in token accuracy |
+|---|---:|---:|
+| loops | 9.01 | 30.0% |
+| control | 10.83 | 14.8% |
+| http | 8.38 | 38.3% |
+| async | 8.58 | 37.0% |
+| json | 10.91 | 14.2% |
+| text | 8.71 | 41.5% |
+| qa | 6.76 | 10.2% |
+| guardrail | 4.83 | 33.9% |
+| longcontext | 4.01 | 37.9% |
+
+Uniform guessing over 4,096 tokens gives a loss of about 8.3, so most domains sit at or above the random baseline. **The model is under-trained, not merely under-evaluated.** Logging should report a full-corpus loss rather than a single-bucket stride in any future run.
+
+### Defects found and corrected in this cycle
+
+| Defect | Consequence | Fix |
+|---|---|---|
+| Stage 2 trained on long-context records alone | Catastrophic forgetting: loss jumped 0.0 to 8 within one step, and every non-long-context domain degraded | Short-corpus replay (12 rows per step) plus a stage-2 learning-rate cap of 3e-5 |
+| 192 long-context training records had a zero loss mask | Their assistant span fell past the stage-1 truncation point, so they contributed no gradient at all | Truncation now keeps the assistant region |
+| Padding dominated compute in the default loader | A batch of 16 cost 15.4 s instead of 0.33 s | Length-bucketed batching; measured 46x faster |
+| Coding records carried only ~25 supervised tokens | Coding signal was dwarfed by the Q&A slice | Verified companion helpers raise the mean to ~75 tokens per record |
+| The sandbox compared only against `_solve` | Composed records could not be graded | `entry` field selects the callable to test |
 
 ## 6. Benchmark results (measured, not mocked)
 
-`src/benchmark.py` ran raw greedy generation from the prompt alone over all **300 unseen holdout records**, then validated syntax with `ast.parse()` and executed each candidate in the sandbox against its probes. Reference implementations were never substituted.
+`src/benchmark.py` runs raw greedy generation from the chat-framed prompt, then validates syntax with `ast.parse()` and executes each candidate in the sandbox against its probes. Reference implementations are never substituted for generated code.
 
-| Metric | Observed |
-|---|---|
-| Unseen holdout problems | 300 |
-| Checkpoint step | 5000 |
-| Syntax-valid | 9 / 300 (3.00%) |
-| Execution-correct | 0 / 300 (0.00%) |
+### Current checkpoint (step 8000)
 
-Per domain, execution-correct was 0/50 for all six domains; the only syntactically valid outputs (9) landed in the `text` domain.
+The full 600-record run has **not yet been executed** against this checkpoint. A sampled diagnostic using the identical pipeline gives:
 
-**This result is reported as measured. It is a failure of generalization, not a harness defect.** The evidence:
+| Slice | Sampled | Result | Rate |
+|---|---:|---|---:|
+| Coding, syntax-valid | 40 | 6 | 15.00% |
+| Guardrail, exact refusal | 20 | 0 | 0.00% |
+| Q&A, exact match | 10 | 0 | 0.00% |
 
-- The model memorized its training partition: greedy generation exactly reproduces held-in references (e.g. `loopsf0v1`, `loopsf0v2`, `loopsf0v3` regenerate character-for-character).
-- Teacher-forced loss is 0.1204 on training records versus 9.024 on holdout records. Holdout loss exceeds the uniform-random baseline of `ln(1024) = 6.931`, meaning the model does not merely fail to generalize - it becomes confidently wrong on unseen variants.
+This is insufficient for a usability claim, and the sample is too small for per-domain inference. It is recorded here so the state of the checkpoint is unambiguous.
+
+### Earlier checkpoint (step 5000, superseded)
+
+That run scored **9/300 syntax-valid (3.00%) and 0/300 execution-correct (0.00%)**, with all 9 valid outputs in the `text` domain. It is retained below because it documents the same underlying limitation:
+
+- Teacher-forced loss was 0.1204 on training records versus 9.024 on holdout records, well above the uniform baseline of `ln(1024) = 6.931`.
 - Typical holdout generations reproduce the correct signature (`def _solve(values):`) and then emit incoherent tokens.
 
-Interpretation: with 300 training sequences and a 5.0M-parameter decoder, the corpus is far too small to force generalizable template learning, so the model fits the training set by rote. A passing holdout score is not achievable at this corpus size and parameter budget without either a much larger synthetic corpus or heavy regularization and early stopping. The 3% syntax / 0% correctness figures are the honest out-of-sample capability of this checkpoint.
+### Interpretation, stated plainly
 
-Generation latency was 0.0724 s mean (median 0.0673, p95 0.1596); execution latency 0.0051 s mean. Raw per-record generations, tracebacks and timings are in `src/data/benchmark.json`.
+Both checkpoints fail their objectives. The architecture is verified working - a 131,072-token input runs in linear memory with an exact cache - but the language model attached to it is under-trained. The parameter budget (11.03M) is spread over a 4,096-token vocabulary with only ~75 supervised tokens per coding record, and the cosine schedule decays to a 3e-5 floor that moved weights by just 1.4e-5 per step at the end of training.
+
+A passing evaluation is not achievable at this corpus size, parameter budget, and step count. It requires either a larger supervised signal, a schedule that keeps a usable learning rate at the end, or a smaller vocabulary. **No metric above is estimated or adjusted.** Raw per-record generations, tracebacks, and timings from the step-5000 run are in `src/data/benchmark.json`.
 
 ## 7. Benchmark methodology
 
