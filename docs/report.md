@@ -1,5 +1,72 @@
 # Chronos Alpha benchmark
 
+## Run 2026-11-14 17:33:41
+
+Checkpoint optimizer step 8000, precision float32, 5 physical cores, 7667.3 s wall time.
+
+Every number below was produced by running this checkpoint: greedy decoding from the chat-framed prompt, then AST validation and sandboxed execution (coding), keyword coverage against a reference explanation (Q&A), exact-sentence detection (guardrail), and chunked-prefill needle lookup at 128k tokens (retrieval). Reference implementations are never substituted for generated code.
+
+| Holdout slice | Records | Result | Rate |
+|---|---:|---|---:|
+| Coding (execution-correct) | 300 | 0 | 0.00% |
+| Coding (syntax-valid) | 300 | 50 | 16.67% |
+| Q&A (explanation coverage mean) | 150 | 3.50% | - |
+| Q&A (exact match) | 150 | 0 | 0.00% |
+| Guardrail (refused) | 100 | 0 | 0.00% |
+| 128k retrieval (needle found) | 50 | 0 | 0.00% |
+
+| Coding domain | Correct | Syntax-valid |
+|---|---:|---:|
+| loops | 0 / 50 | 9 / 50 |
+| control | 0 / 50 | 7 / 50 |
+| http | 0 / 50 | 3 / 50 |
+| async | 0 / 50 | 11 / 50 |
+| json | 0 / 50 | 8 / 50 |
+| text | 0 / 50 | 12 / 50 |
+
+## Latency (seconds)
+
+```json
+{
+  "generation": {
+    "min": 0.033769700006814674,
+    "median": 5.4780096000031335,
+    "p95": 9.156011799990665,
+    "max": 13.36698580000666,
+    "mean": 5.632197632364167
+  },
+  "execution": {
+    "min": 0.0,
+    "median": 0.0,
+    "p95": 0.3147004999918863,
+    "max": 0.4796464999963064,
+    "mean": 0.052464199333432285
+  },
+  "prefill": {
+    "min": 43.68129079998471,
+    "median": 59.76552925001306,
+    "p95": 74.01039370000944,
+    "max": 85.19109249999747,
+    "mean": 60.33448802600091
+  }
+}
+```
+
+Longest retrieval input: 61861 tokens. Raw generations, per-record tracebacks and timings are in `src/data/benchmark.json`.
+
+## Reproduction
+
+```bat
+python src\main.py verify
+python src\main.py train
+python src\main.py benchmark
+python src\main.py chat
+```
+
+---
+
+# Chronos Alpha benchmark
+
 ## Run 2026-11-14 (checkpoint step 8000) — sampled diagnostic
 
 Checkpoint optimizer step 8000, precision float32, 5 physical cores, 8,000 of 8,000 optimizer steps completed with 0 skipped.

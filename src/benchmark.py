@@ -94,7 +94,7 @@ def _retrieval_bench(model, tokenizer, records, cfg, limit=None):
         logits, cache = prefill["logits"], prefill["cache"]
         generated = []
         for unused in range(12):
-            scores = logits[0, -1].float()
+            scores = logits[0, -1].float().clone()
             scores[tokenizer._pad()] = float("-inf")
             selected = int(scores.argmax())
             if selected == tokenizer._eos():

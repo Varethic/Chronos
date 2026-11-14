@@ -57,7 +57,7 @@ def _settings():
         "vocab": 4096, "dim": 384, "layers": 8, "heads": 6, "kvheads": 2, "ff": 1024, "dropout": 0.1,
         "sequence": 1024, "stagesequence": 4096, "chunk": 2048, "attnblock": 512, "window": 2048, "sinks": 16,
         "maxinput": 131072, "maxcontext": 1048576, "theta": 500000.0, "scaling": 32.0, "ropebase": 4096,
-        "batch": 16, "stagebatch": 2, "replayshort": 12, "bucket": 256, "stagelr": 0.00003, "steps": 6000, "stagetwo": 8000, "lr": 0.0003, "warmup": 400, "decay": 0.1, "clip": 1.0,
+        "batch": 16, "stagebatch": 2, "replayshort": 12, "bucket": 256, "stagelr": 0.0001, "steps": 6000, "stagetwo": 8000, "lr": 0.0003, "warmup": 400, "decay": 0.1, "lrfloor": 0.00012, "note": "cosine floor held at 1.2e-4 so the final phase keeps learning", "clip": 1.0,
         "timeout": 4.0, "replay": 3.0, "generate": 384, "reply": 256, "temperature": 0.0, "saveevery": 50,
         "trainrecords": 6000, "holdoutrecords": 600, "needles": 50, "retrievaltokens": 152000, "checkpoints": 4,
     }
@@ -141,7 +141,9 @@ def _schedule(step, cfg):
     if step <= warmup:
         return float(cfg["lr"]) * step / warmup
     progress = min(1.0, (step - warmup) / max(1, total - warmup))
-    floor = float(cfg["lr"]) * float(cfg["decay"])
+    # A cosine floor scaled by decay reached 3e-5, which moved embedding weights
+    # by only 1.4e-5 per step and stalled learning. Hold a usable floor instead.
+    floor = float(cfg["lrfloor"])
     cosine = floor + 0.5 * (float(cfg["lr"]) - floor) * (1.0 + math.cos(math.pi * progress))
     ceiling = float(cfg["stagelr"]) if int(step) > int(cfg["steps"]) else float(cfg["lr"])
     return min(cosine, ceiling)

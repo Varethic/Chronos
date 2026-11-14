@@ -212,7 +212,7 @@ class Chronos(nn.Module):
                 logits, cache = self(torch.tensor([ids], dtype=torch.long), None)
             first, generated = None, []
             for unused in range(cap):
-                scores = logits[0, -1].float()
+                scores = logits[0, -1].float().clone()
                 for banned in (tokenizer._pad(), tokenizer._bos(), tokenizer._unk(), tokenizer._user(), tokenizer._system(), tokenizer._code(), tokenizer._endcode()):
                     scores[banned] = float("-inf")
                 if temperature <= 0.01:
