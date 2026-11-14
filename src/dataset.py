@@ -900,7 +900,12 @@ def _tensors(tokenizer, records, cfg, width):
         begin = None
         for index, token in enumerate(ids[:-1]):
             if token == tokenizer._assistant():
-                begin = index + 1
+                # The token that follows the assistant marker is the first emitted
+                # token of the answer, so position `index` itself must carry loss.
+                # Marking from index + 1 taught the model everything except how
+                # to open a reply, which left the first answer token at chance.
+                begin = index
+                target[index] = 1.0
             elif begin is not None:
                 target[index] = 1.0
         rows.append(ids)
