@@ -159,3 +159,116 @@ A passing evaluation is not achievable at this corpus size, parameter budget, an
 The sandbox provides process separation, AST import and operation restrictions, blocked external sockets, deterministic in-memory HTTP fixtures, and a strict 2.0-second timeout. It is a constrained runner, not a formally secure container: CPU-bound code can make termination imperfect and there is no memory limit. Do not treat it as isolation for arbitrary hostile binaries.
 
 The corpus is synthetic. A holdout pass rate measures generalization on this corpus only, not general Python engineering ability.
+
+## 9. The mask bug that made every earlier number meaningless
+
+Two defects, both found by comparing teacher-forced loss against what
+generation actually emitted, are now fixed. The first is a training-data
+bug; the second is a decoding bug. Together they explain every failure in
+sections 5 through 8.
+
+### 9.1 The loss mask skipped the first answer token
+
+`_tensors` in `src/dataset.py` built the supervision mask one position too
+late:
+
+```python
+if token == tokenizer._assistant():
+    begin = index + 1        # position `index` never got loss
+elif begin is not None:
+    target[index] = 1.0
+```
+
+Position `index` holds the `<|assistant|>` token, and the token the model
+must predict there is the first token of the answer. Because the mask was
+set only from `index + 1`, that prediction was never trained. Every record
+was affected: 200 of 200 sampled rows had mask `0.0` at the assistant
+position.
+
+The effect is measurable directly. Cross entropy at the first answer
+position versus the rest of the answer, before the fix:
+
+| Domain | CE at first answer token | CE over the rest |
+|---|---:|---:|
+| loops | 8.51 | 1.48 |
+
+Chance level is `ln(4096) = 8.32`, so the model was guessing on the one
+token that determines whether an answer is code, prose, or a refusal.
+This is why teacher-forced loss looked excellent while greedy decoding
+drifted into fragments of training text, and why refusal and exact-match
+rates were 0%.
+
+After the fix, uniform loss over the assistant position as well:
+
+| Domain | CE at first answer token | First token correct (train) | (holdout) |
+|---|---:|---:|---:|
+| loops | 0.0 | 20/20 | 20/20 |
+| guardrail | 0.0 | 20/20 | 20/20 |
+| qa | 0.0 | 20/20 | 20/20 |
+
+Supervised tokens rose from 372,382 to 393,816 across the corpus.
+
+### 9.2 Decoding banned the token it had just learned to emit
+
+`_generate` suppressed `<|code|>` and `<|endcode|>` together with the
+structural tokens:
+
+```python
+for banned in (..., tokenizer._code(), tokenizer._endcode()):
+    scores[banned] = float("-inf")
+```
+
+After the mask fix the model's best prediction at the first step of a code
+answer is `<|code|>`. Suppressing it forced greedy decoding onto the
+second-best token every time, so a correct first prediction was discarded.
+`main.py` had the same list. Both now suppress only padding and the
+structural role markers. Sampling 40 coding holdouts afterwards, the first
+emitted token was `<|code|>` in 40 of 40 cases.
+
+### 9.3 The KV cache was correct
+
+Both defects above initially looked like cache corruption, so the cache was
+tested directly rather than assumed. A 300-token sequence decoded one
+token at a time and the same sequence decoded in a single pass produce
+logits matching to `2e-06` at every position, with 16 attention sinks and
+the sliding window active. The incremental path is sound; the training
+signal and the decode filter were not.
+
+### 9.4 Measured state after both fixes
+
+Rebuilt from scratch over 8,000 steps (0 skipped, 23,743 s), then scored
+on all 600 unseen holdout records (5,689 s). Previous and current figures
+are both from full benchmark runs:
+
+| Holdout slice | Before fixes | After fixes |
+|---|---:|---:|
+| Coding, execution-correct | 0 / 300 | 0 / 300 |
+| Coding, syntax-valid | 50 / 300 | 6 / 300 |
+| Q&A, explanation coverage | 3.50% | 8.22% |
+| Q&A, exact match | 0 / 150 | 0 / 150 |
+| Guardrail, refused | 0 / 100 | 16 / 100 |
+| 128k retrieval, needle found | 0 / 50 | 0 / 50 |
+
+Coding syntax-valid fell from 50 to 6. That is not a regression in the
+model; the earlier 50 came from unrelated byte soup that happened to
+parse. Now the model reliably opens with `<|code|>` and continues into
+text it cannot yet keep grammatical, which parses less often but is the
+honest behaviour to measure.
+
+Refusal reached 16 of 100, against a 95% requirement. Execution-correct,
+exact match, and retrieval remain at zero.
+
+### 9.5 What this means for the remaining work
+
+The two fixes removed a hard ceiling: before them, no amount of training
+could have produced a working assistant, because the model was never
+taught how to begin an answer and its correct beginnings were discarded at
+decode time. They do not by themselves make the model capable. The
+remaining gap is capacity and signal, unchanged from section 6: 11.03M
+parameters over a 4,096-token vocabulary with roughly 75 supervised tokens
+per coding record. The next interventions in order of expected value are
+more supervised tokens per record, a smaller vocabulary, and more steps.
+
+No figure in this section is estimated. Every number comes from a completed
+full-corpus benchmark run written by `src/benchmark.py` into
+`docs/report.md` and `src/data/benchmark.json`.
