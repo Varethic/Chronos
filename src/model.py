@@ -213,7 +213,11 @@ class Chronos(nn.Module):
             first, generated = None, []
             for unused in range(cap):
                 scores = logits[0, -1].float().clone()
-                for banned in (tokenizer._pad(), tokenizer._bos(), tokenizer._unk(), tokenizer._user(), tokenizer._system(), tokenizer._code(), tokenizer._endcode()):
+                # <|code|> and <|endcode|> are legitimate emissions: the model is
+                # trained to open a code answer with <|code|>. Banning them forced
+                # greedy decoding onto an arbitrary second-best token and broke
+                # every code sample. Only structural tokens stay suppressed.
+                for banned in (tokenizer._pad(), tokenizer._bos(), tokenizer._unk(), tokenizer._user(), tokenizer._system()):
                     scores[banned] = float("-inf")
                 if temperature <= 0.01:
                     selected = int(scores.argmax())

@@ -1,5 +1,72 @@
 # Chronos Alpha benchmark
 
+## Run 2026-11-15 09:52:35
+
+Checkpoint optimizer step 8000, precision float32, 5 physical cores, 5688.7 s wall time.
+
+Every number below was produced by running this checkpoint: greedy decoding from the chat-framed prompt, then AST validation and sandboxed execution (coding), keyword coverage against a reference explanation (Q&A), exact-sentence detection (guardrail), and chunked-prefill needle lookup at 128k tokens (retrieval). Reference implementations are never substituted for generated code.
+
+| Holdout slice | Records | Result | Rate |
+|---|---:|---|---:|
+| Coding (execution-correct) | 300 | 0 | 0.00% |
+| Coding (syntax-valid) | 300 | 6 | 2.00% |
+| Q&A (explanation coverage mean) | 150 | 8.22% | - |
+| Q&A (exact match) | 150 | 0 | 0.00% |
+| Guardrail (refused) | 100 | 16 | 16.00% |
+| 128k retrieval (needle found) | 50 | 0 | 0.00% |
+
+| Coding domain | Correct | Syntax-valid |
+|---|---:|---:|
+| loops | 0 / 50 | 4 / 50 |
+| control | 0 / 50 | 0 / 50 |
+| http | 0 / 50 | 0 / 50 |
+| async | 0 / 50 | 2 / 50 |
+| json | 0 / 50 | 0 / 50 |
+| text | 0 / 50 | 0 / 50 |
+
+## Latency (seconds)
+
+```json
+{
+  "generation": {
+    "min": 0.11179250001441687,
+    "median": 2.2644112999842037,
+    "p95": 7.2691002000065055,
+    "max": 7.381844399991678,
+    "mean": 2.6752914087268502
+  },
+  "execution": {
+    "min": 0.0,
+    "median": 0.0,
+    "p95": 0.0,
+    "max": 0.3125468000071123,
+    "mean": 0.005922477333321391
+  },
+  "prefill": {
+    "min": 42.82850880001206,
+    "median": 55.626074599989806,
+    "p95": 63.16933260002406,
+    "max": 63.78351369997836,
+    "mean": 55.4386751120002
+  }
+}
+```
+
+Longest retrieval input: 61861 tokens. Raw generations, per-record tracebacks and timings are in `src/data/benchmark.json`.
+
+## Reproduction
+
+```bat
+python src\main.py verify
+python src\main.py train
+python src\main.py benchmark
+python src\main.py chat
+```
+
+---
+
+# Chronos Alpha benchmark
+
 ## Run 2026-11-14 17:33:41
 
 Checkpoint optimizer step 8000, precision float32, 5 physical cores, 7667.3 s wall time.

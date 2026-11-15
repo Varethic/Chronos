@@ -233,7 +233,7 @@ def _chat(maxinput=None, limit=None):
         with torch.inference_mode():
             for unused in range(cap):
                 scores = logits[0, -1].float().clone()
-                for banned in (tokenizer._pad(), tokenizer._bos(), tokenizer._user(), tokenizer._system(), tokenizer._code(), tokenizer._endcode(), tokenizer._unk()):
+                for banned in (tokenizer._pad(), tokenizer._bos(), tokenizer._user(), tokenizer._system(), tokenizer._unk()):
                     scores[banned] = float("-inf")
                 selected = int(scores.argmax())
                 if selected == tokenizer._eos():
