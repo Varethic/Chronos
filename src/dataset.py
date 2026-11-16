@@ -428,8 +428,430 @@ def _textdomain():
     ]
 
 
+_TRANSFORMS = [
+    ("value * $K$", lambda v, k: v * k, "multiply every value by $K$"),
+    ("value + $K$", lambda v, k: v + k, "add $K$ to every value"),
+    ("abs(value)", lambda v, k: abs(v), "take the absolute value of every value"),
+    ("value * value", lambda v, k: v * v, "square every value"),
+    ("value - $K$", lambda v, k: v - k, "subtract $K$ from every value"),
+    ("-value", lambda v, k: -v, "negate every value"),
+    ("value % $K$", lambda v, k: v % k, "take every value modulo $K$"),
+    ("max(value, $K$)", lambda v, k: max(v, k), "raise every value below $K$ up to $K$"),
+]
+_AGGREGATES = [
+    ("return [{E} for value in values]", lambda rows: rows, "return the results as a list"),
+    ("return sum({E} for value in values)", lambda rows: sum(rows), "return the sum of the results"),
+    ("return max({E} for value in values)", lambda rows: max(rows) if rows else 0, "return the largest result"),
+    ("return min({E} for value in values)", lambda rows: min(rows) if rows else 0, "return the smallest result"),
+    ("return sorted(({E} for value in values), reverse=True)", lambda rows: sorted(rows, reverse=True), "return the results in descending order"),
+]
+_FILTERS = [
+    ("", lambda v, k: True, ""),
+    (" if value % $K$ == 0", lambda v, k: v % k == 0, " only for values exactly divisible by $K$"),
+    (" if value > $K$", lambda v, k: v > k, " only for values greater than $K$"),
+    (" if value % 2 == 0", lambda v, k: v % 2 == 0, " only for even values"),
+]
+
+
+def _generated():
+    """Compose transform, aggregate, and filter blocks into structurally distinct families."""
+    out = []
+    for expr, transform, verb in _TRANSFORMS:
+        for aggregate, reduce, tail in _AGGREGATES:
+            for condition, keep, qualifier in _FILTERS:
+                body = aggregate.replace("{E}", expr)
+                head = "def _solve(values):" + chr(10) + "    "
+                if condition and "sum(" in aggregate or condition and "max(" in aggregate or condition and "min(" in aggregate:
+                    body = body.replace("for value in values)", "for value in values" + condition + ")")
+                elif condition:
+                    body = body.replace("for value in values]", "for value in values" + condition + "]")
+                code = head + body.replace("return ", "return ").strip() + chr(10)
+
+                def oracle(arguments, k, transform=transform, reduce=reduce, keep=keep):
+                    chosen = [transform(value, k) for value in arguments[0] if keep(value, k)]
+                    return reduce(chosen)
+
+                spec = verb + qualifier + ", then " + tail
+                out.append({
+                    "code": code,
+                    "spec": spec,
+                    "inputs": lambda k: [[[1, -2, 3, k + 2]], [[0, k, -k]], [[k * 2]], [[]]],
+                    "oracle": oracle,
+                })
+    return out
+
+
+_PREDICATES = [
+    ("value > $K$", lambda v, k: v > k, "strictly greater than $K$"),
+    ("value < $K$", lambda v, k: v < k, "strictly less than $K$"),
+    ("value % $K$ == 0", lambda v, k: v % k == 0, "an exact multiple of $K$"),
+    ("value == $K$", lambda v, k: v == k, "exactly equal to $K$"),
+    ("value % 2 == 0", lambda v, k: v % 2 == 0, "an even number"),
+    ("value % 3 == 0", lambda v, k: v % 3 == 0, "a multiple of three"),
+    ("abs(value) > $K$", lambda v, k: abs(v) > k, "larger in absolute value than $K$"),
+]
+
+
+def _leaves(data):
+    """Collect every integer leaf of nested dictionaries and lists in visit order."""
+    out = []
+    stack = [data]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            stack.extend(reversed(list(item.values())))
+        elif isinstance(item, list):
+            stack.extend(reversed(item))
+        elif isinstance(item, int) and not isinstance(item, bool):
+            out.append(item)
+    return out
+
+
+def _generatecontrol():
+    """Branch and selection families built from predicate, action, and fallback blocks."""
+    out = []
+    for test, holds, phrase in _PREDICATES:
+        for code, spec, oracle in _controlcases(test, holds, phrase):
+            out.append({"code": code, "spec": spec,
+                        "inputs": lambda k: [[[k - 2, k, k + 3, k * 2]], [[k + 1, k + 5]], [[]]],
+                        "oracle": oracle})
+    return out
+
+
+def _controlcases(test, holds, phrase):
+    """Six structurally different families for one predicate."""
+    nl = chr(10)
+    return [
+        ("def _solve(values):" + nl +
+         "    for index, value in enumerate(values):" + nl +
+         "        if " + test + ":" + nl +
+         "            return index" + nl +
+         "    return -1" + nl,
+         "return the index of the first entry that is " + phrase + ", or -1 when there is none",
+         lambda a, k, h=holds: next((i for i, v in enumerate(a[0]) if h(v, k)), -1)),
+        ("def _solve(values):" + nl +
+         "    count = 0" + nl +
+         "    for value in values:" + nl +
+         "        if " + test + ":" + nl +
+         "            count += 1" + nl +
+         "    return count" + nl,
+         "count how many entries are " + phrase,
+         lambda a, k, h=holds: sum(1 for v in a[0] if h(v, k))),
+        ("def _solve(values):" + nl +
+         "    return [value for value in values if " + test + "]" + nl,
+         "keep only the entries that are " + phrase,
+         lambda a, k, h=holds: [v for v in a[0] if h(v, k)]),
+        ("def _solve(values):" + nl +
+         "    if not values:" + nl +
+         "        return $K$" + nl +
+         "    for value in values:" + nl +
+         "        if " + test + ":" + nl +
+         "            return value" + nl +
+         "    return values[0]" + nl,
+         "return the first entry that is " + phrase + ", falling back to $K$ for an empty input and to the first element when nothing matches",
+         lambda a, k, h=holds: k if not a[0] else next((v for v in a[0] if h(v, k)), a[0][0])),
+        ("def _solve(values, flag=True):" + nl +
+         "    if flag:" + nl +
+         "        return [value for value in values if " + test + "]" + nl +
+         "    return [value for value in values if not " + test + "]" + nl,
+         "return the entries that are " + phrase + " when the flag is true and the entries that are not when it is false",
+         lambda a, k, h=holds: [v for v in a[0] if h(v, k)] if (len(a) < 2 or a[1]) else [v for v in a[0] if not h(v, k)]),
+        ("def _solve(values):" + nl +
+         "    best = None" + nl +
+         "    for value in values:" + nl +
+         "        if " + test + ":" + nl +
+         "            if best is None or value > best:" + nl +
+         "                best = value" + nl +
+         "    return best if best is not None else $K$" + nl,
+         "return the largest entry that is " + phrase + ", or $K$ when nothing qualifies",
+         lambda a, k, h=holds: max([v for v in a[0] if h(v, k)], default=k)),
+    ]
+
+
+def _generatejson():
+    """Traversal and reduction families over nested dictionaries and lists."""
+    out = []
+    nl = chr(10)
+    reductions = [
+        ("sum", lambda rows: sum(rows) if rows else 0),
+        ("largest", lambda rows: max(rows) if rows else 0),
+        ("smallest", lambda rows: min(rows) if rows else 0),
+    ]
+    actions = [
+        ("return data + $K$", lambda v, k: v + k, "add $K$ to every integer leaf and return their"),
+        ("return abs(data)", lambda v, k: abs(v), "take the absolute value of every integer leaf and return their"),
+        ("return data * $K$", lambda v, k: v * k, "multiply every integer leaf by $K$ and return their"),
+    ]
+    for name, reduce in reductions:
+        for action, apply, verb in actions:
+            if name == "sum":
+                walk = ("if isinstance(data, dict):" + nl +
+                        "        return sum(_solve(value) for value in data.values())" + nl +
+                        "    if isinstance(data, list):" + nl +
+                        "        return sum(_solve(value) for value in data)" + nl)
+            elif name == "largest":
+                walk = ("if isinstance(data, dict):" + nl +
+                        "        return max((_solve(value) for value in data.values()), default=$K$)" + nl +
+                        "    if isinstance(data, list):" + nl +
+                        "        return max((_solve(value) for value in data), default=$K$)" + nl)
+            else:
+                walk = ("if isinstance(data, dict):" + nl +
+                        "        return min((_solve(value) for value in data.values()), default=$K$)" + nl +
+                        "    if isinstance(data, list):" + nl +
+                        "        return min((_solve(value) for value in data), default=$K$)" + nl)
+            code = ("def _solve(data):" + nl + "    " + walk +
+                    "    if isinstance(data, int) and not isinstance(data, bool):" + nl +
+                    "        " + action + nl +
+                    "    return 0" + nl)
+
+            def oracle(arguments, k, apply=apply, reduce=reduce):
+                return reduce([apply(value, k) for value in _leaves(arguments[0])])
+
+            out.append({"code": code,
+                        "spec": "recursively " + verb + " " + name,
+                        "inputs": lambda k: [[{"a": [k, k + 2], "b": {"c": k * 2}, "d": []}]],
+                        "oracle": oracle})
+    for wrap, phrase in (("item", "the integer leaves as a flat list in visit order"),
+                         ("abs(item)", "the absolute value of every integer leaf as a flat list in visit order")):
+        code = ("def _solve(data):" + nl +
+                "    out = []" + nl + nl +
+                "    def _walk(item):" + nl +
+                "        if isinstance(item, dict):" + nl +
+                "            for value in item.values():" + nl +
+                "                _walk(value)" + nl +
+                "        elif isinstance(item, list):" + nl +
+                "            for value in item:" + nl +
+                "                _walk(value)" + nl +
+                "        elif isinstance(item, int) and not isinstance(item, bool):" + nl +
+                "            out.append(" + wrap + ")" + nl + nl +
+                "    _walk(data)" + nl +
+                "    return out" + nl)
+        out.append({"code": code,
+                    "spec": "collect " + phrase + ", visiting dictionary values and list items in order",
+                    "inputs": lambda k: [[{"a": [k, -2], "b": {"c": 3}}]],
+                    "oracle": lambda a, k, w=wrap: [abs(v) if w.startswith("abs") else v for v in _leaves(a[0])]})
+    return out
+
+
+def _generatetext():
+    """CSV and regular-expression families over fixed small tables."""
+    out = []
+    nl = chr(10)
+    out.append({"code": "import csv, io" + nl * 2 +
+                        "def _solve(text):" + nl +
+                        "    rows = list(csv.DictReader(io.StringIO(text)))" + nl +
+                        "    return rows[:$K$]" + nl,
+                "spec": "parse comma separated text with the csv dictionary reader and return at most the first $K$ rows",
+                "inputs": lambda k: [["name,amount" + nl + "Ada,3" + nl + "Bob,4" + nl + "Cy,5" + nl]],
+                "oracle": lambda a, k: list(csv.DictReader(io.StringIO(a[0])))[:k]})
+    for pattern, describe, sample in (
+        ("[a-z]+", "every run of lowercase letters", "Ada wrote 42 lines in triple quotes"),
+        ("[0-9]+", "every run of digits as text", "Ada wrote 42 lines in 7 files"),
+        ("[A-Z][a-z]+", "every capitalised word", "Ada wrote 42 lines in Paris"),
+        ("[aeiou]+", "every run of vowels", "Ada wrote 42 lines in triple quotes"),
+        ("[^0-9\\s]+", "every run of non digit non space characters as text", "abc 123 Def 456 xy"),
+    ):
+        out.append({"code": "import re" + nl * 2 +
+                            "def _solve(text):" + nl +
+                            "    return re.findall(" + repr(pattern) + ", text)[:$K$]" + nl,
+                    "spec": "find " + describe + " in the text with a regular expression and return at most the first $K$ matches",
+                    "inputs": lambda k, sample=sample: [[sample]],
+                    "oracle": lambda a, k, p=pattern: re.findall(p, a[0])[:k]})
+    for separator, label, sample in ((",", "comma", "a,b,c" + nl + "1,2,3" + nl),
+                                     (";", "semicolon", "a;b;c" + nl + "1;2;3" + nl),
+                                     ("|", "pipe", "a|b|c" + nl + "1|2|3" + nl)):
+        out.append({"code": "import csv, io" + nl * 2 +
+                            "def _solve(text):" + nl +
+                            "    rows = csv.reader(io.StringIO(text), delimiter=" + repr(separator) + ")" + nl +
+                            "    return list(rows)[:$K$]" + nl,
+                    "spec": "split " + label + " separated text with the csv reader and return at most the first $K$ rows as lists",
+                    "inputs": lambda k, sample=sample: [[sample]],
+                    "oracle": lambda a, k, d=separator: list(csv.reader(io.StringIO(a[0]), delimiter=d))[:k]})
+    return out
+
+
+def _generatehttp():
+    """Synchronous HTTP families across requests, httpx, and urllib3 transports."""
+    out = []
+    nl = chr(10)
+    bodies = [
+        ("import requests" + nl * 2 +
+         "def _solve(url, token):" + nl +
+         "    response = requests.get(url, headers={\"Authorization\": \"Bearer \" + token}, timeout=$K$)" + nl +
+         "    response.raise_for_status()" + nl +
+         "    return response.json()[\"base\"] + $K$" + nl,
+         "send a GET request with a bearer authorization header, check the status, and return the JSON base field plus $K$",
+         lambda a, k: _API["base"] + k),
+        ("import requests" + nl * 2 +
+         "def _solve(url):" + nl +
+         "    with requests.Session() as session:" + nl +
+         "        response = session.get(url, params={\"offset\": $K$}, timeout=$K$)" + nl +
+         "    return response.json()[\"offset\"] + $K$" + nl,
+         "send a GET request through a session with the offset query parameter set to $K$, then return the returned offset plus $K$",
+         lambda a, k: k + k),
+        ("import requests" + nl * 2 +
+         "def _solve(url):" + nl +
+         "    response = requests.post(url, json={\"amount\": $K$}, timeout=$K$)" + nl +
+         "    return response.json()[\"amount\"] * 2" + nl,
+         "send a POST request carrying a JSON body whose amount is $K$ and return twice the amount the server reports",
+         lambda a, k: k * 2),
+        ("import httpx" + nl * 2 +
+         "def _solve(url):" + nl +
+         "    response = httpx.get(url, params={\"page\": $K$}, timeout=$K$)" + nl +
+         "    return response.json()[\"page\"] + $K$" + nl,
+         "send a GET request with httpx using the page query parameter set to $K$ and return the returned page plus $K$",
+         lambda a, k: k + k),
+        ("import urllib3, json" + nl * 2 +
+         "def _solve(url):" + nl +
+         "    response = urllib3.PoolManager().request(\"GET\", url)" + nl +
+         "    return json.loads(response.data)[\"base\"] + $K$" + nl,
+         "send a GET request with a urllib3 pool manager, decode the response bytes as JSON, and return base plus $K$",
+         lambda a, k: _API["base"] + k),
+        ("import requests" + nl * 2 +
+         "def _solve(url):" + nl +
+         "    response = requests.get(url, timeout=$K$)" + nl +
+         "    payload = response.json()" + nl +
+         "    return sorted(item[\"value\"] for item in payload[\"items\"])" + nl,
+         "send a GET request and return the item values from the JSON payload in ascending order",
+         lambda a, k: sorted(item["value"] for item in _API["items"])),
+        ("import httpx" + nl * 2 +
+         "def _solve(url):" + nl +
+         "    with httpx.Client(timeout=$K$) as client:" + nl +
+         "        response = client.get(url, params={\"page\": $K$})" + nl +
+         "    return response.json()[\"method\"]" + nl,
+         "open an httpx client with the timeout set to $K$, send a GET request with the page parameter, and return the method the server echoes back",
+         lambda a, k: "GET"),
+        ("import requests" + nl * 2 +
+         "def _solve(url, token):" + nl +
+         "    response = requests.get(url, headers={\"Authorization\": token}, timeout=$K$)" + nl +
+         "    return response.json()[\"token\"] is not None" + nl,
+         "send a GET request whose authorization header is the raw token and return whether the server echoed a header back",
+         lambda a, k: True),
+        ("import httpx" + nl * 2 +
+         "def _solve(url):" + nl +
+         "    response = httpx.post(url, json={\"amount\": $K$}, timeout=$K$)" + nl +
+         "    response.raise_for_status()" + nl +
+         "    return response.json()[\"amount\"] + $K$" + nl,
+         "send a POST request with httpx carrying an amount of $K$, check the status, and return the reported amount plus $K$",
+         lambda a, k: k + k),
+        ("import urllib3, json" + nl * 2 +
+         "def _solve(url):" + nl +
+         "    pool = urllib3.PoolManager()" + nl +
+         "    response = pool.request(\"POST\", url, body=json.dumps({\"amount\": $K$}), headers={\"Content-Type\": \"application/json\"})" + nl +
+         "    return json.loads(response.data)[\"amount\"]" + nl,
+         "send a POST request with a urllib3 pool manager and a JSON body whose amount is $K$, then return the amount the server reports",
+         lambda a, k: k),
+    ]
+    for code, spec, oracle in bodies:
+        # Only templates declaring a second parameter receive the token argument.
+        takes = "token" in code.replace("_solve(", chr(1)).split(chr(1))[1].split(")")[0]
+        out.append({"code": code, "spec": spec,
+                    "inputs": (lambda k: [[_url(k), "tk" + str(k)]]) if takes else (lambda k: [[_url(k)]]),
+                    "oracle": oracle})
+    return out
+
+
+def _generateremote():
+    """Asynchronous HTTP families over aiohttp, including streamed bodies."""
+    out = []
+    nl = chr(10)
+    bodies = [
+        ("import aiohttp, asyncio" + nl * 2 +
+         "async def _solve(url):" + nl +
+         "    async with aiohttp.ClientSession() as session:" + nl +
+         "        async with session.get(url, params={\"page\": $K$}) as response:" + nl +
+         "            payload = await response.json()" + nl +
+         "    return payload[\"page\"] + $K$" + nl,
+         "open an aiohttp session, GET the url with the page parameter set to $K$, await the JSON body, and return the returned page plus $K$",
+         lambda a, k: k + k),
+        ("import aiohttp, asyncio" + nl * 2 +
+         "async def _solve(url):" + nl +
+         "    timeout = aiohttp.ClientTimeout(total=$K$)" + nl +
+         "    async with aiohttp.ClientSession(timeout=timeout) as session:" + nl +
+         "        async with session.post(url, json={\"amount\": $K$}) as response:" + nl +
+         "            payload = await response.json()" + nl +
+         "    return payload[\"amount\"] * 2" + nl,
+         "open an aiohttp session with a total timeout of $K$, POST a JSON amount of $K$, await the JSON body, and return twice the reported amount",
+         lambda a, k: k * 2),
+        ("import aiohttp, asyncio" + nl * 2 +
+         "async def _solve(url):" + nl +
+         "    async with aiohttp.ClientSession() as session:" + nl +
+         "        async with session.get(url) as response:" + nl +
+         "            payload = await response.json()" + nl +
+         "    return [item[\"value\"] for item in payload[\"items\"] if item[\"value\"] >= $K$]" + nl,
+         "open an aiohttp session, GET the url, await the JSON body, and return the item values at least $K$",
+         lambda a, k: [item["value"] for item in _API["items"] if item["value"] >= k]),
+        ("import aiohttp, asyncio" + nl * 2 +
+         "async def _solve(url):" + nl +
+         "    values = []" + nl +
+         "    async with aiohttp.ClientSession() as session:" + nl +
+         "        async with session.get(url) as response:" + nl +
+         "            async for line in response.content:" + nl +
+         "                text = line.decode().strip()" + nl +
+         "                if text:" + nl +
+         "                    values.append(int(text.split(\":\")[-1].strip(\"}\").split(\":\")[-1]))" + nl +
+         "    return values" + nl,
+         "open an aiohttp session, GET the url, read the response content line by line, and return the value field of each JSON line as a list",
+         lambda a, k: list(_API["values"])),
+        ("import aiohttp, asyncio" + nl * 2 +
+         "async def _solve(url):" + nl +
+         "    async with aiohttp.ClientSession() as session:" + nl +
+         "        async with session.get(url) as response:" + nl +
+         "            payload = await response.json()" + nl +
+         "    return sorted(set(item[\"value\"] for item in payload[\"items\"]))" + nl,
+         "open an aiohttp session and return the distinct item values from the JSON payload in ascending order",
+         lambda a, k: sorted(set(item["value"] for item in _API["items"]))),
+        ("import aiohttp, asyncio" + nl * 2 +
+         "async def _solve(url, token):" + nl +
+         "    headers = {\"Authorization\": \"Bearer \" + token}" + nl +
+         "    async with aiohttp.ClientSession(headers=headers) as session:" + nl +
+         "        async with session.get(url) as response:" + nl +
+         "            payload = await response.json()" + nl +
+         "    return payload[\"base\"] + $K$" + nl,
+         "open an aiohttp session carrying a bearer authorization header, GET the url, and return the JSON base field plus $K$",
+         lambda a, k: _API["base"] + k),
+        ("import aiohttp, asyncio" + nl * 2 +
+         "async def _solve(url):" + nl +
+         "    async with aiohttp.ClientSession() as session:" + nl +
+         "        async with session.get(url, params={\"offset\": $K$}) as response:" + nl +
+         "            payload = await response.json()" + nl +
+         "    return payload[\"offset\"] + $K$" + nl,
+         "open an aiohttp session, GET the url with the offset parameter set to $K$, and return the returned offset plus $K$",
+         lambda a, k: k + k),
+        ("import aiohttp, asyncio" + nl * 2 +
+         "async def _solve(url):" + nl +
+         "    async with aiohttp.ClientSession() as session:" + nl +
+         "        async with session.get(url) as response:" + nl +
+         "            return response.status" + nl,
+         "open an aiohttp session and return the HTTP status code of a GET request to the url",
+         lambda a, k: 200),
+    ]
+    for code, spec, oracle in bodies:
+        takes = "token" in code.replace("_solve(", chr(1)).split(chr(1))[1].split(")")[0]
+        stream = "async for line" in code
+        if takes:
+            supply = lambda k, s=stream: [[_url(k, s), "tk" + str(k)]]
+        else:
+            supply = lambda k, s=stream: [[_url(k, s)]]
+        out.append({"code": code, "spec": spec, "inputs": supply,
+                    "oracle": oracle, "module": "async"})
+    return out
+
+
 def _families():
-    return {"loops": _loops(), "control": _control(), "http": _http(), "async": _remote(), "json": _jsondomain(), "text": _textdomain()}
+    """Every family per domain, deduplicated by specification so no two tasks ask the same thing."""
+    raw = {"loops": _loops() + _generated(), "control": _control() + _generatecontrol(), "http": _http() + _generatehttp(), "async": _remote() + _generateremote(), "json": _jsondomain() + _generatejson(), "text": _textdomain() + _generatetext()}
+    clean = {}
+    for domain, families in raw.items():
+        kept, seen = [], set()
+        for template in families:
+            signature = template["spec"]
+            if signature in seen:
+                continue
+            seen.add(signature)
+            kept.append(template)
+        clean[domain] = kept
+    return clean
 
 
 def _plain(value):
@@ -487,6 +909,10 @@ def _challenge(domain, family, index, kind, variant, seed=0):
         if token in spec:
             spec = re.sub("(?<![a-z0-9_])" + token + "(?![a-z0-9_])", word, spec)
     cases = [{"arguments": _plain(list(args)), "expected": _plain(template["oracle"](list(args), variant))} for args in template["inputs"](variant)]
+    if "$K$" not in template["spec"]:
+        # A family whose specification carries no constant would otherwise emit
+        # the same prompt for every variant, so the seed discriminates it instead.
+        spec = spec.rstrip() + " Treat the number " + str(variant) + " as the fixed constant of this task."
     lead = "Write Python code defining an async function _solve. " if template.get("module") == "async" else "Write Python code defining the function _solve. "
     tail = " Respond with the function code only." if kind.endswith("t") else " Reply with only the corrected function source."
     prompt = lead + spec + tail
@@ -573,11 +999,18 @@ def _coding(split, count):
     domaincount = count // len(_DOMAINS)
     records, seen = [], set()
     offset = 1000 if split == "holdout" else 0
+    families = _families()
     for domain in _DOMAINS:
         produced, roundindex = 0, 0
+        span = len(families[domain])
         while produced < domaincount:
-            for index in range(10):
-                for variant in range(1, 11):
+            # Spread the requested count across every family before repeating any
+            # of them, so a 500 record domain exercises all of its templates
+            # instead of only the first few.
+            perpass = max(1, domaincount // max(1, span))
+            order = list(range(span))
+            for index in order:
+                for variant in range(1, perpass + 1):
                     if produced >= domaincount:
                         break
                     family = index
