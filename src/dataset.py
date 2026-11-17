@@ -467,7 +467,7 @@ def _generated():
                     body = body.replace("for value in values]", "for value in values" + condition + "]")
                 code = head + body.replace("return ", "return ").strip() + chr(10)
 
-                def oracle(arguments, k, transform=transform, reduce=reduce, keep=keep):
+                def _apply(arguments, k, transform=transform, reduce=reduce, keep=keep):
                     chosen = [transform(value, k) for value in arguments[0] if keep(value, k)]
                     return reduce(chosen)
 
@@ -476,7 +476,7 @@ def _generated():
                     "code": code,
                     "spec": spec,
                     "inputs": lambda k: [[[1, -2, 3, k + 2]], [[0, k, -k]], [[k * 2]], [[]]],
-                    "oracle": oracle,
+                    "oracle": _apply,
                 })
     return out
 
@@ -604,13 +604,13 @@ def _generatejson():
                     "        " + action + nl +
                     "    return 0" + nl)
 
-            def oracle(arguments, k, apply=apply, reduce=reduce):
+            def _apply(arguments, k, apply=apply, reduce=reduce):
                 return reduce([apply(value, k) for value in _leaves(arguments[0])])
 
             out.append({"code": code,
                         "spec": "recursively " + verb + " " + name,
                         "inputs": lambda k: [[{"a": [k, k + 2], "b": {"c": k * 2}, "d": []}]],
-                        "oracle": oracle})
+                        "oracle": _apply})
     for wrap, phrase in (("item", "the integer leaves as a flat list in visit order"),
                          ("abs(item)", "the absolute value of every integer leaf as a flat list in visit order")):
         code = ("def _solve(data):" + nl +
