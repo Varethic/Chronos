@@ -1,5 +1,139 @@
 # Chronos Alpha benchmark
 
+## Run 2026-11-17 08:47:41
+
+Checkpoint optimizer step 8000, precision float32, 5 physical cores, 4815.0 s wall time.
+
+Every number below was produced by running this checkpoint: greedy decoding from the chat-framed prompt, then AST validation and sandboxed execution (coding), keyword coverage against a reference explanation (Q&A), exact-sentence detection (guardrail), and chunked-prefill needle lookup at 128k tokens (retrieval). Reference implementations are never substituted for generated code.
+
+| Holdout slice | Records | Result | Rate |
+|---|---:|---|---:|
+| Coding (execution-correct) | 300 | 0 | 0.00% |
+| Coding (syntax-valid) | 300 | 0 | 0.00% |
+| Q&A (explanation coverage mean) | 150 | 2.72% | - |
+| Q&A (exact match) | 150 | 0 | 0.00% |
+| Guardrail (refused) | 100 | 74 | 74.00% |
+| 128k retrieval (needle found) | 50 | 0 | 0.00% |
+
+| Coding domain | Correct | Syntax-valid |
+|---|---:|---:|
+| loops | 0 / 50 | 0 / 50 |
+| control | 0 / 50 | 0 / 50 |
+| http | 0 / 50 | 0 / 50 |
+| async | 0 / 50 | 0 / 50 |
+| json | 0 / 50 | 0 / 50 |
+| text | 0 / 50 | 0 / 50 |
+
+## Latency (seconds)
+
+```json
+{
+  "generation": {
+    "min": 0.1203203999903053,
+    "median": 0.9632061500160489,
+    "p95": 6.5022416999563575,
+    "max": 7.660323199990671,
+    "mean": 1.519184549455531
+  },
+  "execution": {
+    "min": 0.0,
+    "median": 0.0,
+    "p95": 0.0,
+    "max": 0.0,
+    "mean": 0.0
+  },
+  "prefill": {
+    "min": 37.72208580002189,
+    "median": 51.158725150016835,
+    "p95": 58.37011890002759,
+    "max": 59.890294300043024,
+    "mean": 50.52113888200489
+  }
+}
+```
+
+Longest retrieval input: 59881 tokens. Raw generations, per-record tracebacks and timings are in `src/data/benchmark.json`.
+
+## Reproduction
+
+```bat
+python src\main.py verify
+python src\main.py train
+python src\main.py benchmark
+python src\main.py chat
+```
+
+---
+
+# Chronos Alpha benchmark
+
+## Run 2026-11-17 00:45:52
+
+Checkpoint optimizer step 8000, precision float32, 5 physical cores, 4564.1 s wall time.
+
+Every number below was produced by running this checkpoint: greedy decoding from the chat-framed prompt, then AST validation and sandboxed execution (coding), keyword coverage against a reference explanation (Q&A), exact-sentence detection (guardrail), and chunked-prefill needle lookup at 128k tokens (retrieval). Reference implementations are never substituted for generated code.
+
+| Holdout slice | Records | Result | Rate |
+|---|---:|---|---:|
+| Coding (execution-correct) | 300 | 0 | 0.00% |
+| Coding (syntax-valid) | 300 | 0 | 0.00% |
+| Q&A (explanation coverage mean) | 150 | 5.83% | - |
+| Q&A (exact match) | 150 | 0 | 0.00% |
+| Guardrail (refused) | 100 | 65 | 65.00% |
+| 128k retrieval (needle found) | 50 | 0 | 0.00% |
+
+| Coding domain | Correct | Syntax-valid |
+|---|---:|---:|
+| loops | 0 / 50 | 0 / 50 |
+| control | 0 / 50 | 0 / 50 |
+| http | 0 / 50 | 0 / 50 |
+| async | 0 / 50 | 0 / 50 |
+| json | 0 / 50 | 0 / 50 |
+| text | 0 / 50 | 0 / 50 |
+
+## Latency (seconds)
+
+```json
+{
+  "generation": {
+    "min": 0.12823929998558015,
+    "median": 1.0198206499917433,
+    "p95": 2.5629013999714516,
+    "max": 6.885363399982452,
+    "mean": 1.074371641090415
+  },
+  "execution": {
+    "min": 0.0,
+    "median": 0.0,
+    "p95": 0.0,
+    "max": 0.0,
+    "mean": 0.0
+  },
+  "prefill": {
+    "min": 37.49087510001846,
+    "median": 50.92587989999447,
+    "p95": 59.478552100015804,
+    "max": 59.8506637000246,
+    "mean": 50.25668454999919
+  }
+}
+```
+
+Longest retrieval input: 59902 tokens. Raw generations, per-record tracebacks and timings are in `src/data/benchmark.json`.
+
+## Reproduction
+
+```bat
+python src\main.py verify
+python src\main.py train
+python src\main.py benchmark
+python src\main.py chat
+```
+
+---
+
+# Chronos Alpha benchmark
+
 ## Run 2026-11-15 09:52:35
 
 Checkpoint optimizer step 8000, precision float32, 5 physical cores, 5688.7 s wall time.

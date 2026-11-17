@@ -192,7 +192,15 @@ class Tokenizer:
             if role == "user":
                 ids += self._encode(content, controls=False) + [self._eos(), self._assistant()]
             else:
-                ids += [self._code()] + self._encode(content, controls=False) + [self._endcode(), self._eos()]
+                # Only Python source is fenced with the code control tokens. A refusal
+                # or a prose explanation is plain text; fencing every answer made
+                # <|code|> mean "some answer starts here", so the model could not tell
+                # a code reply from a refusal and emitted one when asked for the other.
+                source = isinstance(content, str) and content.lstrip().startswith(("def ", "import ", "async def ", "@", "from "))
+                if source:
+                    ids += [self._code()] + self._encode(content, controls=False) + [self._endcode(), self._eos()]
+                else:
+                    ids += self._encode(content, controls=False) + [self._eos()]
                 if index != len(messages) - 1:
                     ids += [self._user()]
         return ids

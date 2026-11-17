@@ -1007,7 +1007,7 @@ def _coding(split, count):
             # Spread the requested count across every family before repeating any
             # of them, so a 500 record domain exercises all of its templates
             # instead of only the first few.
-            perpass = max(1, domaincount // max(1, span))
+            perpass = max(1, (domaincount + span - 1) // max(1, span))
             order = list(range(span))
             for index in order:
                 for variant in range(1, perpass + 1):
@@ -1016,7 +1016,8 @@ def _coding(split, count):
                     family = index
                     tag = "h" if split == "holdout" else "t"
                     seed = offset + variant * 37 + index * 997 + roundindex * 7919 + len(domain) * 13
-                    record = _challenge(domain, family, tag, "code" + tag, variant + roundindex * 211, seed)
+                    shift = 500 if split == "holdout" else 0
+                    record = _challenge(domain, family, tag, "code" + tag, variant + roundindex * 211 + shift, seed)
                     _expand(record, domain, family, variant, roundindex, offset)
                     if record["prompt"] in seen or record["code"] in seen:
                         raise ValueError("duplicate coding record produced: " + record["id"])
