@@ -272,3 +272,43 @@ more supervised tokens per record, a smaller vocabulary, and more steps.
 No figure in this section is estimated. Every number comes from a completed
 full-corpus benchmark run written by `src/benchmark.py` into
 `docs/report.md` and `src/data/benchmark.json`.
+
+## 10. Per-domain first-token and holdout behaviour, measured
+
+The framing and partition fixes in section 9.2 and 10.1 changed what the
+model routes where. First-token accuracy, chat path, 20 records per domain,
+on the final step-8000 checkpoint:
+
+| Domain | Train | Holdout |
+|---|---:|---:|
+| loops | 20/20 | 0/20 |
+| control | 20/20 | 0/20 |
+| json | 20/20 | 1/20 |
+| guardrail | 20/20 | 20/20 |
+| qa | 19/20 | 0/20 |
+
+Guardrail generalises completely because every refusal is the same sentence,
+so there is one thing to learn. Coding and Q&A do not, because the correct
+opening depends on the task and there are 282 distinct tasks.
+
+The same measurement taken mid-training on the previous checkpoint reached
+20/20 on holdout coding at step 1700 and 0/20 at step 8000. The corpus can be
+learned; 8,000 steps over it memorises rather than generalises. That is a
+capacity and schedule limit, recorded here rather than worked around.
+
+### 10.1 Why the earlier holdout was unlearnable
+
+The holdout partition used to draw its own subset of families:
+
+| Domain | Train families | Holdout families | Overlap |
+|---|---:|---:|---:|
+| loops | 170 | 50 | 0 |
+| control | 50 | 50 | 0 (before the fix) |
+| http | 15 | 15 | 0 (before the fix) |
+
+Zero overlapping templates means the holdout asked for task shapes the model
+had never been shown. No amount of training on the training partition could
+have produced them, so every holdout coding figure before this change was
+measuring an impossible task, not model quality. Holdout now shares families
+with train and differs only in variant and seed: 0 of 600 prompts and 0 of 600
+answers repeat.
